@@ -1,0 +1,63 @@
+/**
+ * 前台用户管理插件样式
+ * 仅补充主题没有的样式
+ */
+
+/* 弹窗宽度 */
+.um-modal-width {
+    width: 520px;
+    max-width: calc(100% - 20px);
+}
+
+/* 悬浮按钮位置 */
+.um-float-wrap {
+    bottom: 120px;
+}
+
+/* 资产输入框 */
+.um-asset-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    font-weight: 600;
+    padding: 0;
+    outline: none;
+}
+
+/* 表单输入框灰色背景 */
+.user-manage-modal .form-control {
+    background: var(--muted-border-color);
+}
+
+/* 栅格布局 - 一行两列 */
+.user-manage-modal .row {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.user-manage-modal .col-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+    .um-asset-input {
+        font-size: 16px;
+    }
+
+    .user-manage-modal .modal-colorful-header {
+        height: 80px;
+    }
+
+    .user-manage-modal .modal-colorful-header + * {
+        margin-top: 80px;
+    }
+
+    /* 移动端一列 */
+    .user-manage-modal .col-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
