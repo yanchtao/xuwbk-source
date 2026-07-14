@@ -1,7 +1,14 @@
 <?php
-
 /**
- * 新用户注册时自动用id为1的用户发送私信
+ * 新用户注册自动发送私信
+ * @package XuWbk
+ * @author 轩玮
+ * @version 1.0
+ * @created 2024-10-01 00:00:00
+ * @modified 2025-06-23 16:27:00
+ * @description 由《轩玮博客》开发用于WordPress to zibll主题的美化《XuWbk主题》
+ * @contact QQ:6050640 邮箱：6050640@qq.com 网址：www.xuwbk.com
+ * @copyright Copyright (c) 2025 by XuWbk.Com, All Rights Reserved.
  */
 function auto_send_private($new_user_id) {
     // 检查是否是新用户，并确保用户ID为1存在
@@ -86,4 +93,34 @@ function xuwbk_get_pay_type_name($pay_type = null, $show_icon = false) {
     return $n;
 }
 
+add_action('admin_footer', function () {
+    $screen = get_current_screen();
+    if (!$screen) return;
+
+    if ($screen->base === 'post' || $screen->base === 'post-new') {
+        ?>
+        <script>
+        (function() {
+            window.onbeforeunload = null;
+
+            const oldAdd = window.addEventListener;
+            window.addEventListener = function(type, listener, options) {
+                if (type === 'beforeunload') {
+                    return;
+                }
+                return oldAdd.call(this, type, listener, options);
+            };
+
+            document.addEventListener('DOMContentLoaded', function() {
+                window.onbeforeunload = null;
+            });
+
+            setInterval(function() {
+                window.onbeforeunload = null;
+            }, 500);
+        })();
+        </script>
+        <?php
+    }
+});
 

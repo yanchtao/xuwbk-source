@@ -1,14 +1,14 @@
 <?php
-/*
- * @Author        : Qinver
- * @Url           : zibll.com
- * @Date          : 2020-09-29 13:18:36
- * @LastEditTime: 2023-09-16 13:53:11
- * @Email         : 770349780@qq.com
- * @Project       : Zibll子比主题
- * @Description   : 一款极其优雅的Wordpress主题
- * @Read me       : 感谢您使用子比主题，主题源码有详细的注释，支持二次开发。
- * @Remind        : 使用盗版主题会存在各种未知风险。支持正版，从我做起！
+/**
+ * 《主题页脚》模板文件
+ * @package XuWbk
+ * @author 轩玮
+ * @version 1.0.0
+ * @created 2024-09-29 13:18:36
+ * @modified 2025-06-23 16:27:00
+ * @description 由《轩玮博客》开发用于WordPress to zibll主题的美化《XuWbk主题》
+ * @contact QQ:6050640 邮箱：6050640@qq.com 网址：www.xuwbk.com
+ * @copyright Copyright (c) 2025 by XuWbk.Com, All Rights Reserved.
  */
 
 ?>
@@ -48,7 +48,7 @@ if (!empty($options['bottom_animal'])) {
         
         <div class="site-girl">
             <div class="girl Onecad_fl"> 
-                <i class="thumb" style="background-image:url(https://img.alicdn.com/imgextra/i3/2210123621994/O1CN01oqmLBM1QbIqMoD6S9_!!2210123621994.png)"></i> 
+                <i class="thumb" style="background-image:url(https://img.xuwbk.com/uploads/tup/robot.png)"></i> 
             </div>
             <div class="girl-info hide_md">
                 <h4>管理员介绍</h4>
@@ -145,16 +145,26 @@ if (!empty($options['bottom_animal'])) {
                             <span class="link-heading">友情链接：</span>
                             <div class="link-items">
                                 <?php
-                                $bookmarks = get_bookmarks(array(
-                                    'category' => false,
-                                    'orderby' => 'name',
-                                    'order' => 'ASC',
-                                    'limit' => -1,
-                                    'hide_invisible' => 1,
-                                    'show_updated' => 0,
-                                    'include' => '',
-                                    'exclude' => ''
-                                ));
+                                // 缓存友情链接（24小时），减少数据库查询
+                                $bookmarks = function_exists('xuwbk_cache_query') 
+                                    ? xuwbk_cache_query('xuwbk_footer_bookmarks', function() {
+                                        return get_bookmarks(array(
+                                            'category' => false,
+                                            'orderby' => 'name',
+                                            'order' => 'ASC',
+                                            'limit' => -1,
+                                            'hide_invisible' => 1,
+                                            'show_updated' => 0,
+                                        ));
+                                    }, DAY_IN_SECONDS)
+                                    : get_bookmarks(array(
+                                        'category' => false,
+                                        'orderby' => 'name',
+                                        'order' => 'ASC',
+                                        'limit' => -1,
+                                        'hide_invisible' => 1,
+                                        'show_updated' => 0,
+                                    ));
                                 
                                 if (!empty($bookmarks)) {
                                     foreach ($bookmarks as $bookmark) {

@@ -1,16 +1,111 @@
 <?php
-/*
- * @Author        : Qinver
- * @Url           : zibll.com
- * @Date          : 2020-09-29 13:18:36
- * @LastEditTime: 2024-10-11 12:22:00
- * @Email         : 770349780@qq.com
- * @Project       : Zibll子比主题
- * @Description   : 一款极其优雅的Wordpress主题
+/**
+ * 《主题函数》入口文件
+ * @package XuWbk
+ * @author 轩玮
+ * @version 1.0.0
+ * @created 2024-09-29 13:18:36
+ * @modified 2025-06-23 16:27:00
+ * @description 由《轩玮博客》开发用于WordPress to zibll主题的美化《XuWbk主题》
+ * @contact QQ:6050640 邮箱：6050640@qq.com 网址：www.xuwbk.com
+ * @copyright Copyright (c) 2025 by XuWbk.Com, All Rights Reserved.
  */
 
 // 引入父主题核心函数
 require_once get_theme_file_path('/inc/inc.php');
+
+// ========== Zib_CFSwidget 完全自包含包装（彻底避免 CSF_Widget 类冲突） ==========
+// 不再调用 Zib_CFSwidget 的任何方法，而是完全复制其逻辑
+
+if (!function_exists('xuwbk_cfswidget_show_class')) {
+    function xuwbk_cfswidget_show_class($instance) {
+        $show_type = isset($instance['show_type']) ? $instance['show_type'] : 'all';
+
+        $wp_is_mobile = wp_is_mobile();
+        if ($show_type == 'only_pc' && $wp_is_mobile) {
+            return '';
+        }
+        if ($show_type == 'only_sm' && !$wp_is_mobile) {
+            return '';
+        }
+
+        if (!empty($instance['show_id_type']) && !empty($instance['show_ids'])) {
+            if (is_singular()) {
+                $the_id   = get_the_ID();
+                $show_ids = preg_split("/,|，|\s|\n/", $instance['show_ids']);
+                if ($instance['show_id_type'] == 'show' && !in_array($the_id, $show_ids)) {
+                    return '';
+                }
+                if ($instance['show_id_type'] == 'hide' && in_array($the_id, $show_ids)) {
+                    return '';
+                }
+            }
+        }
+
+        if ($show_type == 'only_pc') {
+            return 'hidden-xs';
+        }
+        if ($show_type == 'only_sm') {
+            return 'visible-xs-block';
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('xuwbk_cfswidget_show_title')) {
+    function xuwbk_cfswidget_show_title($instance = array()) {
+        if (empty($instance['title'])) {
+            return '';
+        }
+
+        $title    = $instance['title'];
+        $subtitle = !empty($instance['subtitle']) ? $instance['subtitle'] : '';
+        $subtitle = $subtitle ? '<small class="ml10">' . $subtitle . '</small>' : '';
+
+        $link_url   = !empty($instance['title_link']['url']) ? $instance['title_link']['url'] : '';
+        $link_text  = !empty($instance['title_link']['text']) ? $instance['title_link']['text'] : '<i class="fa fa-angle-right fa-fw"></i>更多';
+        $link_blank = !empty($instance['title_link']['target']) && $instance['title_link']['target'] == '_blank' ? ' target="_blank"' : '';
+
+        $more_but = $link_url ? '<div class="pull-right em09 mt3"><a' . $link_blank . ' href="' . esc_url($link_url) . '" class="muted-2-color">' . $link_text . '</a></div>' : '';
+
+        return '<div class="box-body notop"><div class="title-theme">' . $title . $subtitle . $more_but . '</div></div>';
+    }
+}
+
+if (!function_exists('xuwbk_cfswidget_echo_before')) {
+    function xuwbk_cfswidget_echo_before($instance = array(), $class = 'mb20', $wp_args = array()) {
+        $show_class = xuwbk_cfswidget_show_class($instance);
+        if ($show_class && $show_class !== true) {
+            $class .= ' ' . $show_class;
+        }
+
+        $affix = !empty($instance['sidebar_affix']) ? ' data-affix="true"' : '';
+
+        // 入场动画
+        $animation      = !empty($instance['animation_in']) ? $instance['animation_in'] : '';
+        $animation_attr = $animation ? ' data-animation="' . esc_attr($animation) . '"' : '';
+        $animation_attr .= $animation && !empty($instance['animation_repeat']) ? ' data-animation-repeat="true"' : '';
+        if ($animation_attr && $animation) {
+            $class .= ' obs-animate ani-' . $animation;
+        }
+
+        $title = xuwbk_cfswidget_show_title($instance);
+
+        do_action('zib_cfswidget_echo_before', $instance, $class);
+        $class_attr = $class ? ' class="' . esc_attr($class) . '"' : '';
+
+        echo '<div' . $affix . $class_attr . $animation_attr . '>';
+        echo $title;
+    }
+}
+
+if (!function_exists('xuwbk_cfswidget_echo_after')) {
+    function xuwbk_cfswidget_echo_after($instance = array(), $wp_args = array()) {
+        echo '</div>';
+        do_action('zib_cfswidget_echo_after', $instance);
+    }
+}
 
 // 引入子主题核心函数
 require_once get_theme_file_path('/core/core.php');
@@ -192,6 +287,45 @@ function xuwbk_hide_extra_comment_box() {
  * 修改ZibPay订单类型名称
  * 将广告订单的通知消息中的"付费阅读"改为"广告购买"
  */
+
+/**
+ * 广告订单价格缓存查询（避免同一请求中多次 $wpdb 查询）
+ * @param int    $order_id   订单ID
+ * @param string $order_num  订单号（备选）
+ * @return float 订单价格
+ */
+function xuwbk_ad_get_cached_price($order_id = 0, $order_num = '') {
+    static $price_cache = array();
+    $key = $order_id ? 'id_' . $order_id : 'num_' . $order_num;
+    if (isset($price_cache[$key])) return $price_cache[$key];
+    
+    global $wpdb;
+    if ($order_id) {
+        $price = $wpdb->get_var($wpdb->prepare(
+            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE id = %d", $order_id
+        ));
+    } elseif ($order_num) {
+        $price = $wpdb->get_var($wpdb->prepare(
+            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE order_num = %s", $order_num
+        ));
+    } else {
+        $price = 0;
+    }
+    $price_cache[$key] = floatval($price);
+    return $price_cache[$key];
+}
+
+/**
+ * 统一广告订单消息修复
+ */
+function xuwbk_ad_fix_message($content, $order_price) {
+    $content = str_replace('付费阅读', '广告购买', $content);
+    $content = str_replace('类型：付费阅读', '类型：广告购买', $content);
+    if ($order_price > 0) {
+        $content = preg_replace('/(付款明细：|金额：|已支付：|-)￥0(?:\.0+)?/', '$1￥' . number_format($order_price, 2), $content);
+    }
+    return $content;
+}
 add_filter('zibpay_payment_success_msg', 'xuwbk_ad_payment_success_msg_filter', 10, 2);
 function xuwbk_ad_payment_success_msg_filter($msg, $order) {
     // 检查是否是广告订单
@@ -378,62 +512,13 @@ function xuwbk_ad_user_msg_content_filter($content, $msg_type, $msg_data) {
         $order_price = isset($msg_data['amount']) ? $msg_data['amount'] : 0;
     }
 
-    // 如果价格仍然为0，尝试从数据库查询
+    // 价格缓存查询
     if ($order_price == 0 && isset($msg_data['order']['id'])) {
-        global $wpdb;
-        $order_id = $msg_data['order']['id'];
-        $order_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE id = %d",
-            $order_id
-        ), ARRAY_A);
-        if ($order_data && isset($order_data['order_price']) && $order_data['order_price'] > 0) {
-            $order_price = $order_data['order_price'];
-        }
+        $order_price = xuwbk_ad_get_cached_price($msg_data['order']['id']);
     }
 
     if ($order_price > 0) {
-        // 执行金额替换
-        // 1. 替换付款明细
-        $content = preg_replace('/付款明细：￥0(?:\.0+)?/', '付款明细：￥' . number_format($order_price, 2), $content);
-        
-        // 2. 替换金额显示
-        $content = preg_replace('/金额：￥0(?:\.0+)?/', '金额：￥' . number_format($order_price, 2), $content);
-        
-        // 3. 替换-金额显示
-        $content = preg_replace('/-金额：￥0(?:\.0+)?/', '-金额：￥' . number_format($order_price, 2), $content);
-        
-        // 4. 通用的￥0替换（但避免替换订单号中的0）
-        $content = preg_replace('/(?<!订单号：)(?<!订单号)\s*￥0(?:\.0+)?/', '￥' . number_format($order_price, 2), $content);
-        
-        // 5. 如果以上都不匹配，尝试直接替换金额部分
-        if (strpos($content, '￥0') !== false) {
-            $content = preg_replace('/￥0(?:\.0+)?(?!\d{4,})/', '￥' . number_format($order_price, 2), $content);
-        }
-        
-        // 6. 最后的手段：如果仍然包含￥0，使用更直接的替换
-        if (strpos($content, '￥0') !== false) {
-            $content = str_replace('￥0', '￥' . number_format($order_price, 2), $content);
-        }
-    } else {
-        
-        // 如果价格仍然为0，尝试从广告订单数据中获取
-        $ad_id = isset($msg_data['order']['other']['ad_id']) ? $msg_data['order']['other']['ad_id'] : '';
-        if ($ad_id) {
-            $options = get_option('XuWbk');
-            if (isset($options['pending_ad_orders']) && is_array($options['pending_ad_orders'])) {
-                foreach ($options['pending_ad_orders'] as $ad_order) {
-                    if (isset($ad_order['ad_id']) && $ad_order['ad_id'] === $ad_id) {
-                        $order_price = isset($ad_order['order_price']) ? $ad_order['order_price'] : 0;
-                        
-                        if ($order_price > 0) {
-                            // 使用获取到的价格进行替换
-                            $content = str_replace('￥0', '￥' . number_format($order_price, 2), $content);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+        $content = xuwbk_ad_fix_message($content, $order_price);
     }
 
     return $content;
@@ -543,16 +628,12 @@ function xuwbk_ad_fix_order_price($order_data, $product_id) {
 
     // 确保order_price大于0
     if (isset($order_data['order_price']) && $order_data['order_price'] <= 0) {
-        error_log('警告: 订单价格为0，尝试从其他字段获取');
-
         // 尝试从other数据中获取价格
         $other = isset($order_data['other']) ? (is_array($order_data['other']) ? $order_data['other'] : maybe_unserialize($order_data['other'])) : array();
         if (!empty($other) && is_array($other)) {
-            error_log('other数据: ' . print_r($other, true));
             // 检查other中是否有价格信息
             if (isset($other['order_price']) && $other['order_price'] > 0) {
                 $order_data['order_price'] = floatval($other['order_price']);
-                error_log('从other获取价格: ' . $order_data['order_price']);
             }
         }
 
@@ -578,8 +659,6 @@ function xuwbk_ad_order_type_display_fix() {
     ?>
     <script>
     (function() {
-        console.log('========== 广告订单类型修复脚本已加载 ==========');
-
         // 检测是否是广告订单的函数
         function isAdOrder(rowData) {
             if (!rowData) return false;
@@ -600,10 +679,6 @@ function xuwbk_ad_order_type_display_fix() {
             if (typeof Vue !== 'undefined') {
                 // 等待Vue实例挂载
                 setTimeout(function() {
-                    var vueInstances = document.querySelectorAll('[class*="vue"]').length;
-                    console.log('检测到Vue实例数量:', vueInstances);
-
-                    // 监听数据变化而不是定时检查
                     updateOrderTypeDisplay();
                 }, 1000);
             }
@@ -650,7 +725,6 @@ function xuwbk_ad_order_type_display_fix() {
 
                 // 修复"付费阅读"为"广告购买"
                 if (text === '付费阅读' || text === '付费阅读无需发货') {
-                    console.log('修改订单类型文本:', text);
                     node.textContent = text.replace('付费阅读', '广告购买');
                     changed = true;
                     fixedCount++;
@@ -665,7 +739,6 @@ function xuwbk_ad_order_type_display_fix() {
                         var priceMatch = rowHTML.match(/price["\s:]+(\d+\.?\d*)/);
                         if (priceMatch) {
                             var realPrice = parseFloat(priceMatch[1]).toFixed(2);
-                            console.log('修复金额显示: ￥0 -> ￥' + realPrice);
                             node.textContent = text.replace(/￥0\.0+/, '￥' + realPrice);
                             changed = true;
                             fixedCount++;
@@ -673,10 +746,6 @@ function xuwbk_ad_order_type_display_fix() {
                     }
                 }
             });
-
-            if (fixedCount > 0) {
-                console.log('修复完成，共修复 ' + fixedCount + ' 处');
-            }
         }
 
         // 初始执行
@@ -696,7 +765,6 @@ function xuwbk_ad_order_type_display_fix() {
             mutations.forEach(function(mutation) {
                 if (location.href !== lastUrl) {
                     lastUrl = location.href;
-                    console.log('URL已变化,重新执行修复');
                     updateOrderTypeDisplay();
                 }
             });
@@ -707,148 +775,101 @@ function xuwbk_ad_order_type_display_fix() {
 }
 
 /**
- * 修改前端用户订单通知中的订单类型显示 - 优化版
+ * 前端广告订单显示修复（统一版）
+ * 合并了订单类型名称和消息金额显示修复，使用单一 MutationObserver
  */
-add_action('wp_footer', 'xuwbk_ad_user_order_type_fix');
-function xuwbk_ad_user_order_type_fix() {
-    if (!is_user_logged_in()) {
-        return;
-    }
+add_action('wp_footer', 'xuwbk_ad_frontend_unified_fix');
+function xuwbk_ad_frontend_unified_fix() {
+    if (!is_user_logged_in()) return;
     ?>
     <script>
     (function() {
-        console.log('========== 广告订单类型修复脚本已加载（优化版） ==========');
+        var priceCache = {};
+        var AD_MARKERS = ['xuwbk_ad_', 'img-slot-', '260214'];
 
-        // 检测是否是广告订单的函数
-        function isAdOrderFromHTML(html) {
-            return html.includes('xuwbk_ad_') ||
-                   html.includes('img-slot-') ||
-                   html.includes('ad-') ||
-                   html.includes('广告') ||
-                   (html.includes('260214') && html.includes('订单号'));
+        function isAdRelated(text, html) {
+            for (var i = 0; i < AD_MARKERS.length; i++) {
+                if (html.indexOf(AD_MARKERS[i]) !== -1) return true;
+            }
+            return (text.indexOf('￥0') !== -1 && text.indexOf('订单号') !== -1);
         }
 
-        // 获取订单真实价格的函数
-        function getOrderRealPrice(container) {
-            var priceMatch = container.textContent.match(/order_price["\s:]+(\d+\.?\d*)|price["\s:]+(\d+\.?\d*)/);
+        function tryGetPrice(node) {
+            var text = node.textContent || '';
+            var orderMatch = text.match(/订单号\[(\d+)\]/);
+            if (!orderMatch) return null;
+            var orderNum = orderMatch[1];
+            if (priceCache[orderNum]) return priceCache[orderNum];
+
+            // 从Vue数据获取
+            if (typeof window.vueData !== 'undefined' && window.vueData.orders) {
+                var order = window.vueData.orders.find(function(o) { return o.order_num === orderNum; });
+                if (order && order.order_price > 0) {
+                    return (priceCache[orderNum] = order.order_price.toFixed(2));
+                }
+            }
+            // 从DOM属性获取
+            var el = document.querySelector('[data-order-num="' + orderNum + '"][data-order-price]');
+            if (el && parseFloat(el.getAttribute('data-order-price')) > 0) {
+                return (priceCache[orderNum] = parseFloat(el.getAttribute('data-order-price')).toFixed(2));
+            }
+            // 从文本中尝试匹配
+            var priceMatch = node.parentElement ? node.parentElement.innerHTML.match(/price["\s:]+(\d+\.?\d*)/) : null;
             if (priceMatch) {
-                return parseFloat(priceMatch[1] || priceMatch[2]).toFixed(2);
+                return (priceCache[orderNum] = parseFloat(priceMatch[1]).toFixed(2));
             }
             return null;
         }
 
-        // 修复单个节点
-        function fixNode(node) {
+        function fixTextNode(node) {
             var text = node.textContent || '';
-            if (!text || (!text.includes('付费阅读') && !text.includes('￥0'))) {
-                return false;
-            }
+            if (!text || (text.indexOf('付费阅读') === -1 && text.indexOf('￥0') === -1)) return false;
 
             var parent = node.parentElement;
             if (!parent) return false;
 
             var parentHTML = parent.innerHTML || '';
-            var isAdOrder = isAdOrderFromHTML(parentHTML);
-            
-            if (!isAdOrder) return false;
+            if (!isAdRelated(text, parentHTML)) return false;
 
-            var changed = false;
-
-            // 修复"付费阅读"为"广告购买"
-            if (text.includes('付费阅读')) {
-                node.textContent = text.replace(/付费阅读/g, '广告购买');
-                changed = true;
-                console.log('修改订单类型: 付费阅读 -> 广告购买');
+            var newText = text;
+            if (text.indexOf('付费阅读') !== -1) {
+                newText = newText.replace(/付费阅读/g, '广告购买');
+            }
+            if (text.indexOf('￥0') !== -1) {
+                var price = tryGetPrice(node);
+                if (price) newText = newText.replace(/￥0(?:\.0+)?/g, '￥' + price);
             }
 
-            // 修复金额显示
-            if (text.includes('￥0') && (text.includes('付款明细') || text.includes('已支付') || text.includes('金额'))) {
-                var realPrice = getOrderRealPrice(parent);
-                if (realPrice) {
-                    node.textContent = node.textContent.replace(/￥0\.0+/, '￥' + realPrice);
-                    changed = true;
-                    console.log('修复金额显示: ￥0 -> ￥' + realPrice);
-                }
+            if (newText !== text) {
+                node.textContent = newText;
+                return true;
             }
-
-            return changed;
+            return false;
         }
 
-        // 批量修复函数
-        function batchFixNodes() {
-            var walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                null,
-                false
-            );
-
-            var fixedCount = 0;
-            while(walker.nextNode()) {
-                var node = walker.currentNode;
-                if (fixNode(node)) {
-                    fixedCount++;
-                }
-            }
-
-            if (fixedCount > 0) {
-                console.log('批量修复完成，共修复 ' + fixedCount + ' 处');
-            }
+        function scanAndFix() {
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            while (walker.nextNode()) fixTextNode(walker.currentNode);
         }
 
-        // 节流函数
-        function throttle(func, wait) {
-            var timeout;
-            var previous = 0;
-            
-            return function executedFunction() {
-                var context = this;
-                var args = arguments;
-                var now = Date.now();
-                var remaining = wait - (now - previous);
-
-                if (remaining <= 0 || remaining > wait) {
-                    if (timeout) {
-                        clearTimeout(timeout);
-                        timeout = null;
-                    }
-                    previous = now;
-                    func.apply(context, args);
-                } else if (!timeout) {
-                    timeout = setTimeout(function() {
-                        previous = Date.now();
-                        timeout = null;
-                        func.apply(context, args);
-                    }, remaining);
-                }
+        function throttle(fn, wait) {
+            var timer, last = 0;
+            return function() {
+                var now = Date.now(), remaining = wait - (now - last);
+                if (remaining <= 0) { last = now; fn(); }
+                else if (!timer) timer = setTimeout(function() { last = Date.now(); timer = null; fn(); }, remaining);
             };
         }
 
-        // 使用节流优化的修复函数
-        var throttledFix = throttle(batchFixNodes, 1000);
+        var throttledScan = throttle(scanAndFix, 1000);
 
-        // 初始执行
-        batchFixNodes();
+        scanAndFix();
 
-        // 监听DOM变化（优化配置）
-        var observer = new MutationObserver(function(mutations) {
-            var hasAddedNodes = mutations.some(function(m) { 
-                return m.addedNodes && m.addedNodes.length > 0; 
-            });
-            
-            if (hasAddedNodes) {
-                throttledFix();
+        new MutationObserver(function(mutations) {
+            if (mutations.some(function(m) { return m.addedNodes && m.addedNodes.length; })) {
+                throttledScan();
             }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: false,
-            attributes: false
-        });
-
-        console.log('修复脚本初始化完成，监听DOM变化...');
+        }).observe(document.body, { childList: true, subtree: true });
     })();
     </script>
     <?php
@@ -944,51 +965,18 @@ function xuwbk_ad_message_content_filter($content) {
  * 3. 消息内容修复函数
  */
 function xuwbk_ad_fix_message_content($message_data, $order_data) {
-    if (!isset($message_data['content'])) {
-        return $message_data;
-    }
-
-    $order_price = isset($order_data['order_price']) ? $order_data['order_price'] : 0;
-    error_log('修复前的订单价格: ' . $order_price);
-
-    // 如果价格为0，尝试从数据库查询最新价格
+    if (!isset($message_data['content'])) return $message_data;
+    
+    $order_price = isset($order_data['order_price']) ? floatval($order_data['order_price']) : 0;
     if ($order_price == 0 && isset($order_data['id'])) {
-        global $wpdb;
-        $order_id = $order_data['id'];
-        $db_order_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE id = %d",
-            $order_id
-        ), ARRAY_A);
-        
-        if ($db_order_data && isset($db_order_data['order_price']) && $db_order_data['order_price'] > 0) {
-            $order_price = $db_order_data['order_price'];
-            error_log('从数据库查询到的价格: ' . $order_price);
-        }
+        $order_price = xuwbk_ad_get_cached_price($order_data['id']);
     }
-
-    if ($order_price > 0) {
-        // 替换"付费阅读"为"广告购买"
-        $message_data['content'] = str_replace('付费阅读', '广告购买', $message_data['content']);
-        
-        // 替换金额显示 - 使用更精确的匹配
-        $message_data['content'] = preg_replace('/(付款明细：|金额：|已支付：|-)￥0(?:\\.0+)?/', '$1￥' . number_format($order_price, 2), $message_data['content']);
-        
-        error_log('修复后的消息内容: ' . $message_data['content']);
-    } else {
-        error_log('警告: 订单价格仍为0，尝试从全局变量获取');
-        
-        // 尝试从全局变量获取价格
+    if ($order_price == 0) {
         global $xuwbk_ad_current_order;
-        if (isset($xuwbk_ad_current_order['price']) && $xuwbk_ad_current_order['price'] > 0) {
-            $order_price = $xuwbk_ad_current_order['price'];
-            error_log('从全局变量获取的价格: ' . $order_price);
-            
-            // 使用全局变量中的价格进行修复
-            $message_data['content'] = str_replace('付费阅读', '广告购买', $message_data['content']);
-            $message_data['content'] = preg_replace('/(付款明细：|金额：|已支付：|-)￥0(?:\\.0+)?/', '$1￥' . number_format($order_price, 2), $message_data['content']);
-        }
+        if (!empty($xuwbk_ad_current_order['price'])) $order_price = floatval($xuwbk_ad_current_order['price']);
     }
-
+    
+    $message_data['content'] = xuwbk_ad_fix_message($message_data['content'], $order_price);
     return $message_data;
 }
 
@@ -996,237 +984,16 @@ function xuwbk_ad_fix_message_content($message_data, $order_data) {
  * 4. 显示内容修复函数
  */
 function xuwbk_ad_fix_displayed_content($content) {
-    // 查找订单号
     preg_match('/订单号\[(\d+)\]/', $content, $order_matches);
-    if (empty($order_matches)) {
-        return $content;
-    }
-
-    $order_num = $order_matches[1];
-    error_log('检测到订单号: ' . $order_num);
-
-    // 从数据库查询订单信息
-    global $wpdb;
-    $order_data = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM {$wpdb->prefix}zibpay_order WHERE order_num = %s",
-        $order_num
-    ), ARRAY_A);
-
-    if (!$order_data) {
-        return $content;
-    }
-
-    // 检查是否是广告订单
-    $product_id = isset($order_data['product_id']) ? $order_data['product_id'] : '';
-    if (strpos($product_id, 'xuwbk_ad_') === false) {
-        return $content;
-    }
-
-    error_log('检测到广告订单，价格: ' . ($order_data['order_price'] ?? 'N/A'));
-
-    $order_price = isset($order_data['order_price']) ? $order_data['order_price'] : 0;
+    if (empty($order_matches)) return $content;
     
-    if ($order_price > 0) {
-        // 替换"付费阅读"为"广告购买"
-        $content = str_replace('付费阅读', '广告购买', $content);
-        
-        // 替换金额显示
-        $content = preg_replace('/(付款明细：|金额：|已支付：|-)￥0(?:\\.0+)?/', '$1￥' . number_format($order_price, 2), $content);
-        
-        error_log('页面内容修复完成');
-    }
-
-    return $content;
+    $order_price = xuwbk_ad_get_cached_price(0, $order_matches[1]);
+    if ($order_price <= 0) return $content;
+    
+    return xuwbk_ad_fix_message($content, $order_price);
 }
 
-/**
- * 5. 最终保障：JavaScript实时修复 - 优化版
- */
-add_action('wp_footer', 'xuwbk_ad_js_real_time_fix');
-function xuwbk_ad_js_real_time_fix() {
-    if (!is_user_logged_in()) {
-        return;
-    }
-    ?>
-    <script>
-    (function() {
-        console.log('========== 广告订单消息实时修复脚本已加载（优化版） ==========');
 
-        // 检测是否是广告订单消息
-        function isAdOrderMessage(text, html) {
-            return text && 
-                   text.includes('￥0') && 
-                   (text.includes('付款明细') || text.includes('金额') || text.includes('已支付')) &&
-                   html && 
-                   (html.includes('xuwbk_ad_') || html.includes('260214') || html.includes('订单号'));
-        }
-
-        // 从页面数据中获取真实价格（缓存结果）
-        var priceCache = {};
-        function getRealPriceFromPage(orderNum) {
-            // 检查缓存
-            if (priceCache[orderNum]) {
-                return priceCache[orderNum];
-            }
-
-            var realPrice = null;
-
-            // 尝试从Vue数据中获取
-            if (typeof window.vueData !== 'undefined') {
-                var orders = window.vueData.orders || [];
-                var order = orders.find(function(o) {
-                    return o.order_num === orderNum;
-                });
-                if (order && order.order_price > 0) {
-                    realPrice = order.order_price.toFixed(2);
-                }
-            }
-
-            // 尝试从隐藏的订单数据中获取
-            if (!realPrice) {
-                var orderElements = document.querySelectorAll('[data-order-num="' + orderNum + '"]');
-                for (var i = 0; i < orderElements.length; i++) {
-                    var priceAttr = orderElements[i].getAttribute('data-order-price');
-                    if (priceAttr && parseFloat(priceAttr) > 0) {
-                        realPrice = parseFloat(priceAttr).toFixed(2);
-                        break;
-                    }
-                }
-            }
-
-            // 缓存结果
-            if (realPrice) {
-                priceCache[orderNum] = realPrice;
-            }
-
-            return realPrice;
-        }
-
-        // 修复单个消息元素
-        function fixMessageElement(element) {
-            var text = element.textContent || '';
-            var html = element.innerHTML || '';
-
-            if (!isAdOrderMessage(text, html)) {
-                return false;
-            }
-
-            console.log('检测到需要修复的广告订单消息');
-            
-            // 从页面中提取订单号
-            var orderNumMatch = text.match(/订单号\[(\d+)\]/);
-            if (!orderNumMatch) {
-                return false;
-            }
-
-            var orderNum = orderNumMatch[1];
-            console.log('订单号: ' + orderNum);
-            
-            // 尝试从页面数据中获取真实价格
-            var realPrice = getRealPriceFromPage(orderNum);
-            if (!realPrice) {
-                return false;
-            }
-
-            console.log('获取到真实价格: ' + realPrice);
-            
-            // 修复文本内容
-            var fixedText = text.replace(/付费阅读/g, '广告购买');
-            fixedText = fixedText.replace(/￥0(?:\.0+)?/g, '￥' + realPrice);
-            
-            if (element.textContent !== fixedText) {
-                element.textContent = fixedText;
-                console.log('消息内容已修复');
-                return true;
-            }
-
-            return false;
-        }
-
-        // 批量修复函数
-        function batchFixMessages() {
-            var messageElements = document.querySelectorAll('[class*="message"], [class*="notice"], [class*="alert"]');
-            var fixedCount = 0;
-            
-            messageElements.forEach(function(element) {
-                if (fixMessageElement(element)) {
-                    fixedCount++;
-                }
-            });
-
-            if (fixedCount > 0) {
-                console.log('批量修复完成，共修复 ' + fixedCount + ' 条消息');
-            }
-        }
-
-        // 节流函数
-        function throttle(func, wait) {
-            var timeout;
-            var previous = 0;
-            
-            return function executedFunction() {
-                var context = this;
-                var args = arguments;
-                var now = Date.now();
-                var remaining = wait - (now - previous);
-
-                if (remaining <= 0 || remaining > wait) {
-                    if (timeout) {
-                        clearTimeout(timeout);
-                        timeout = null;
-                    }
-                    previous = now;
-                    func.apply(context, args);
-                } else if (!timeout) {
-                    timeout = setTimeout(function() {
-                        previous = Date.now();
-                        timeout = null;
-                        func.apply(context, args);
-                    }, remaining);
-                }
-            };
-        }
-
-        // 使用节流优化的修复函数
-        var throttledFix = throttle(batchFixMessages, 1500);
-
-        // 初始执行
-        setTimeout(batchFixMessages, 500);
-        
-        // 监听DOM变化（优化配置）
-        var observer = new MutationObserver(function(mutations) {
-            var hasAddedNodes = mutations.some(function(m) { 
-                return m.addedNodes && m.addedNodes.length > 0; 
-            });
-            
-            if (hasAddedNodes) {
-                throttledFix();
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: false,
-            attributes: false
-        });
-
-        console.log('实时修复脚本初始化完成，监听DOM变化...');
-    })();
-                if (mutation.addedNodes.length > 0) {
-                    setTimeout(fixAdOrderMessages, 500);
-                }
-            });
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    })();
-    </script>
-    <?php
-}
 
 /**
  * 强力广告订单消息修复系统
@@ -1254,99 +1021,41 @@ function xuwbk_ad_force_msg_fix($content, $msg_type, $msg_data) {
         if (strpos($product_id, 'xuwbk_ad_') !== false) {
             $is_ad_order = true;
             $order_data = $msg_data['order'];
-            error_log('通过product_id检测到广告订单: ' . $product_id);
         }
     }
-    
+
     // 方式2：通过订单号检测（260214开头的订单）
     if (!$is_ad_order && isset($msg_data['order']) && isset($msg_data['order']['order_num'])) {
         $order_num = $msg_data['order']['order_num'];
         if (strpos($order_num, '260214') === 0) {
             $is_ad_order = true;
             $order_data = $msg_data['order'];
-            error_log('通过订单号检测到广告订单: ' . $order_num);
         }
     }
-    
+
     // 方式3：通过内容检测
     if (!$is_ad_order && strpos($content, '广告购买') !== false) {
         $is_ad_order = true;
-        error_log('通过内容检测到广告订单');
     }
 
     if (!$is_ad_order) {
-        error_log('不是广告订单，跳过修复');
         return $content;
     }
 
-    // 获取订单价格
+    // 获取订单价格（使用缓存避免重复查询）
     $order_price = 0;
-    
-    // 方式1：从消息数据获取
-    if ($order_data && isset($order_data['order_price'])) {
-        $order_price = $order_data['order_price'];
-        error_log('从消息数据获取价格: ' . $order_price);
+    if ($order_data && !empty($order_data['order_price'])) {
+        $order_price = floatval($order_data['order_price']);
     }
-    
-    // 方式2：如果价格为0，从数据库查询最新价格
-    if ($order_price == 0 && $order_data && isset($order_data['id'])) {
-        global $wpdb;
-        $order_id = $order_data['id'];
-        error_log('从数据库查询订单价格，订单ID: ' . $order_id);
-        
-        $db_order_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT order_price, order_num FROM {$wpdb->prefix}zibpay_order WHERE id = %d",
-            $order_id
-        ), ARRAY_A);
-        
-        if ($db_order_data) {
-            error_log('数据库查询结果: ' . print_r($db_order_data, true));
-            if (isset($db_order_data['order_price']) && $db_order_data['order_price'] > 0) {
-                $order_price = $db_order_data['order_price'];
-                error_log('从数据库查询到的价格: ' . $order_price);
-            }
-        }
+    if ($order_price == 0 && $order_data && !empty($order_data['id'])) {
+        $order_price = xuwbk_ad_get_cached_price($order_data['id']);
     }
-    
-    // 方式3：如果仍然为0，尝试从订单号查询
-    if ($order_price == 0 && isset($msg_data['order']['order_num'])) {
-        $order_num = $msg_data['order']['order_num'];
-        error_log('通过订单号查询价格: ' . $order_num);
-        
-        global $wpdb;
-        $db_order_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE order_num = %s",
-            $order_num
-        ), ARRAY_A);
-        
-        if ($db_order_data && isset($db_order_data['order_price']) && $db_order_data['order_price'] > 0) {
-            $order_price = $db_order_data['order_price'];
-            error_log('通过订单号查询到的价格: ' . $order_price);
-        }
+    if ($order_price == 0 && !empty($msg_data['order']['order_num'])) {
+        $order_price = xuwbk_ad_get_cached_price(0, $msg_data['order']['order_num']);
     }
 
-    error_log('最终确定的价格: ' . $order_price);
-
-    // 强力文本替换
     if ($order_price > 0) {
-        $original_content = $content;
-        
-        // 1. 替换订单类型
-        $content = str_replace('付费阅读', '广告购买', $content);
-        
-        // 2. 替换各种金额显示格式
-        $price_str = '￥' . number_format($order_price, 2);
-        
-        // 匹配并替换所有可能的金额显示格式
-        $content = preg_replace('/付款明细：￥0(?:\.0+)?/', '付款明细：' . $price_str, $content);
-        $content = preg_replace('/已支付：￥0(?:\.0+)?/', '已支付：' . $price_str, $content);
-        $content = preg_replace('/金额：￥0(?:\.0+)?/', '金额：' . $price_str, $content);
-        $content = preg_replace('/-金额：￥0(?:\.0+)?/', '-金额：' . $price_str, $content);
-        
-        // 3. 通用替换（处理未匹配的格式）
-        $content = str_replace('￥0', $price_str, $content);
-        $content = str_replace('￥0.00', $price_str, $content);
-        
+        $content = xuwbk_ad_fix_message($content, $order_price);
     }
 
     return $content;
@@ -1357,39 +1066,14 @@ function xuwbk_ad_force_msg_fix($content, $msg_type, $msg_data) {
  */
 add_filter('zib_user_message_content', 'xuwbk_ad_ultimate_msg_fix', 99999, 2);
 function xuwbk_ad_ultimate_msg_fix($content, $order_data) {
-    // 检查是否是广告订单
     if (!isset($order_data['product_id']) || strpos($order_data['product_id'], 'xuwbk_ad_') === false) {
         return $content;
     }
-
-    // 获取订单价格
-    $order_price = isset($order_data['order_price']) ? $order_data['order_price'] : 0;
-    
-    // 如果价格为0，从数据库查询最新价格
+    $order_price = isset($order_data['order_price']) ? floatval($order_data['order_price']) : 0;
     if ($order_price == 0 && isset($order_data['order_num'])) {
-        global $wpdb;
-        $order_num = $order_data['order_num'];
-        
-        $db_order_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT order_price FROM {$wpdb->prefix}zibpay_order WHERE order_num = %s",
-            $order_num
-        ), ARRAY_A);
-        
-        if ($db_order_data && isset($db_order_data['order_price']) && $db_order_data['order_price'] > 0) {
-            $order_price = $db_order_data['order_price'];
-        }
+        $order_price = xuwbk_ad_get_cached_price(0, $order_data['order_num']);
     }
-
-    // 修复订单类型
-    $content = str_replace('付费阅读', '广告购买', $content);
-    
-    // 修复金额显示
-    if ($order_price > 0) {
-        $price_str = '￥' . number_format($order_price, 2);
-        $content = preg_replace('/(付款明细：|已支付：|金额：|-)￥0(?:\.0+)?/', '$1' . $price_str, $content);
-    }
-
-    return $content;
+    return xuwbk_ad_fix_message($content, $order_price);
 }
 
 /**
@@ -1433,13 +1117,10 @@ function xuwbk_float_nav_enqueue_assets() {
 
 /**
  * 单行文章列表CSS - 根据后台设置动态调整文章宽度
+ * 在所有页面加载，优先级设最高确保覆盖父主题样式
  */
-add_action('wp_enqueue_scripts', 'xuwbk_oneline_posts_compact_css', 20);
+add_action('wp_enqueue_scripts', 'xuwbk_oneline_posts_compact_css', 999);
 function xuwbk_oneline_posts_compact_css() {
-    if (!is_home() && !is_front_page()) {
-        return;
-    }
-    
     $css_path = get_stylesheet_directory() . '/assets/css/oneline-posts-compact.css';
     if (file_exists($css_path)) {
         wp_enqueue_style(
@@ -1448,5 +1129,309 @@ function xuwbk_oneline_posts_compact_css() {
             array(),
             filemtime($css_path)
         );
+    }
+}
+
+/**
+ * 用户中心布局修复CSS - 解决用户中心页面错位问题
+ * 仅在 /user/ 相关页面加载，优先级设最高
+ */
+add_action('wp_enqueue_scripts', 'xuwbk_user_center_fix_css', 999);
+function xuwbk_user_center_fix_css() {
+    // 仅在用户中心相关页面加载
+    $is_user_page = false;
+    
+    // 检查 URL 路径是否包含 /user
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+    if (strpos($request_uri, '/user') !== false) {
+        $is_user_page = true;
+    }
+    
+    // 检查是否是 author 页面（个人主页也使用相同头部）
+    if (is_author()) {
+        $is_user_page = true;
+    }
+    
+    if (!$is_user_page) {
+        return;
+    }
+    
+    $css_path = get_stylesheet_directory() . '/assets/css/user-center-fix.css';
+    if (file_exists($css_path)) {
+        wp_enqueue_style(
+            'xuwbk-user-center-fix',
+            get_stylesheet_directory_uri() . '/assets/css/user-center-fix.css',
+            array(),
+            filemtime($css_path)
+        );
+    }
+}
+
+/**
+ * 修复 layout_bg post meta 中 background-image 数组到字符串的转换
+ * 模板导入时 background-image 存储为数组 {url: "..."}，但父主题 zib-head.php 期望字符串。
+ * 
+ * 三层防护：
+ * 1. save 时拦截（update_post_metadata 过滤器）—— 预防新数据
+ * 2. 页面加载时修复（wp 钩子）—— 修复已有损坏数据
+ * 3. 读取时纠正（get_post_metadata 过滤器）—— 兜底保护
+ */
+
+// 第一层：元数据保存时标准化
+add_filter('update_post_metadata', 'xuwbk_filter_save_layout_bg', 10, 5);
+function xuwbk_filter_save_layout_bg($check, $object_id, $meta_key, $meta_value, $prev_value) {
+    if ($meta_key !== 'layout_bg') {
+        return $check;
+    }
+    // 允许 WordPress 继续处理，利用 added_post_meta / updated_post_meta 动作
+    return $check;
+}
+
+// 第二层：数据实际写入前标准化（更可靠）
+add_action('added_post_meta', 'xuwbk_fix_layout_bg_on_added', 10, 4);
+add_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10, 4);
+function xuwbk_fix_layout_bg_on_added($meta_id, $object_id, $meta_key, $meta_value) {
+    xuwbk_maybe_fix_layout_bg_meta($object_id, $meta_key, $meta_value);
+}
+function xuwbk_fix_layout_bg_on_updated($meta_id, $object_id, $meta_key, $meta_value) {
+    xuwbk_maybe_fix_layout_bg_meta($object_id, $meta_key, $meta_value);
+}
+function xuwbk_maybe_fix_layout_bg_meta($object_id, $meta_key, $meta_value) {
+    if ($meta_key !== 'layout_bg' || !is_array($meta_value)) {
+        return;
+    }
+    $normalized = xuwbk_normalize_bg_image($meta_value);
+    if ($normalized !== $meta_value) {
+        // 直接更新，确保标准化后的数据存入数据库
+        remove_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10);
+        update_post_meta($object_id, 'layout_bg', $normalized);
+        add_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10, 4);
+    }
+}
+
+// 第三层：页面加载时主动修复当前页的损坏数据（在 wp_head 之前执行）
+add_action('wp', 'xuwbk_fix_current_page_layout_bg', 1);
+function xuwbk_fix_current_page_layout_bg() {
+    if (!is_page()) return;
+    $post_id = get_queried_object_id();
+    if (!$post_id) return;
+
+    $layout_bg = get_post_meta($post_id, 'layout_bg', true);
+    if (!is_array($layout_bg)) return;
+
+    $needs_fix = false;
+    foreach (array('img_white', 'img_dark') as $key) {
+        if (isset($layout_bg[$key]['background-image']) && is_array($layout_bg[$key]['background-image'])) {
+            $needs_fix = true;
+            break;
+        }
+    }
+
+    if ($needs_fix) {
+        $normalized = xuwbk_normalize_bg_image($layout_bg);
+        // 绕开 updated_post_meta 钩子避免递归
+        remove_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10);
+        update_post_meta($post_id, 'layout_bg', $normalized);
+        add_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10, 4);
+        // 清除 post meta 缓存，确保后续读取获取最新数据
+        wp_cache_delete($post_id, 'post_meta');
+    }
+}
+
+// 第四层：读取时兜底标准化（捕获通过标准 get_post_meta 的调用）
+add_filter('get_post_metadata', 'xuwbk_fix_layout_bg_read', 10, 4);
+function xuwbk_fix_layout_bg_read($value, $object_id, $meta_key, $single) {
+    if ($meta_key !== 'layout_bg' || $value !== null) {
+        return $value;
+    }
+    // 不移除过滤器（此处 WordPress 尚未递归，直接获取原始值）
+    // 使用 remove + get + add 模式防止递归
+    remove_filter('get_post_metadata', 'xuwbk_fix_layout_bg_read', 10);
+    $raw = get_post_meta($object_id, $meta_key, true);
+    add_filter('get_post_metadata', 'xuwbk_fix_layout_bg_read', 10, 4);
+
+    if (!is_array($raw)) return $value;
+
+    $normalized = xuwbk_normalize_bg_image($raw);
+    if ($normalized !== $raw) {
+        // 后台静默修复数据库
+        update_post_meta($object_id, $meta_key, $normalized);
+    }
+    return $single ? $normalized : array($normalized);
+}
+
+/**
+ * 递归标准化背景图片数据，将 background-image 从数组转为 URL 字符串
+ */
+function xuwbk_normalize_bg_image($data) {
+    if (!is_array($data)) {
+        return $data;
+    }
+
+    foreach (array('img_white', 'img_dark') as $key) {
+        if (isset($data[$key]['background-image']) && is_array($data[$key]['background-image'])) {
+            if (isset($data[$key]['background-image']['url'])) {
+                $data[$key]['background-image'] = $data[$key]['background-image']['url'];
+            } else {
+                $data[$key]['background-image'] = '';
+            }
+        }
+    }
+
+    return $data;
+}
+
+/**
+ * 第五层：后台编辑页面加载时主动修复 layout_bg 数据
+ * 解决 CSF 批量获取 post meta 时 get_post_metadata 过滤器无法逐键拦截的问题。
+ * load-post.php 在 metabox 渲染之前执行，修复后后续 CSF 字段读取到正确字符串。
+ */
+add_action('load-post.php', 'xuwbk_fix_admin_edit_page_layout_bg');
+function xuwbk_fix_admin_edit_page_layout_bg() {
+    $post_id = isset($_GET['post']) ? intval($_GET['post']) : 0;
+    if (!$post_id || get_post_type($post_id) !== 'page') return;
+
+    $layout_bg = get_post_meta($post_id, 'layout_bg', true);
+    if (!is_array($layout_bg)) return;
+
+    $normalized = xuwbk_normalize_bg_image($layout_bg);
+    if ($normalized !== $layout_bg) {
+        remove_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10);
+        update_post_meta($post_id, 'layout_bg', $normalized);
+        add_action('updated_post_meta', 'xuwbk_fix_layout_bg_on_updated', 10, 4);
+        wp_cache_delete($post_id, 'post_meta');
+    }
+}
+
+// ============================================================
+// 以下为安全加固 & 性能优化代码（2026-07-11 添加）
+// ============================================================
+
+/**
+ * 移除 WordPress 冗余元标签和资源
+ */
+add_action('init', 'xuwbk_cleanup_wp_head');
+function xuwbk_cleanup_wp_head() {
+    // 移除 REST API 链接头
+    remove_action('wp_head', 'rest_output_link_wp_head', 10);
+    remove_action('template_redirect', 'rest_output_link_header', 11);
+    // 移除短链接
+    remove_action('wp_head', 'wp_shortlink_wp_head');
+    // 移除 oEmbed
+    remove_action('wp_head', 'wp_oembed_add_discovery_links');
+    remove_action('wp_head', 'wp_oembed_add_host_js');
+}
+
+/**
+ * 前端优化：移除块编辑器样式（已禁用古腾堡）
+ */
+add_action('wp_enqueue_scripts', 'xuwbk_remove_block_styles', 100);
+function xuwbk_remove_block_styles() {
+    if (!is_admin()) {
+        wp_dequeue_style('wp-block-library');
+        wp_dequeue_style('wp-block-library-theme');
+        wp_dequeue_style('wc-blocks-style');
+        wp_dequeue_style('global-styles');
+    }
+}
+
+/**
+ * 非关键 JS 添加 defer 属性（减少阻塞渲染）
+ */
+add_filter('script_loader_tag', 'xuwbk_add_defer_async', 10, 2);
+function xuwbk_add_defer_async($tag, $handle) {
+    $defer_scripts = array('xuwbk-ai-chat', 'xuwbk-dock', 'xuwbk-ad');
+    if (in_array($handle, $defer_scripts, true)) {
+        return str_replace(' src', ' defer src', $tag);
+    }
+    return $tag;
+}
+
+/**
+ * 主查询优化：归档/搜索页禁用不必要缓存
+ */
+add_action('pre_get_posts', 'xuwbk_optimize_queries');
+function xuwbk_optimize_queries($query) {
+    if (is_admin() || !$query->is_main_query()) return;
+    if ($query->is_archive() || $query->is_search()) {
+        $query->set('no_found_rows', true);
+        $query->set('update_post_term_cache', false);
+        $query->set('update_post_meta_cache', false);
+    }
+}
+
+// ===== REST API 安全加固 =====
+/**
+ * 对未登录用户限制 REST API 访问（保留支付/主题必要端点的公开访问）
+ */
+add_filter('rest_authentication_errors', 'xuwbk_rest_api_limit');
+function xuwbk_rest_api_limit($result) {
+    if (is_user_logged_in()) return $result;
+    
+    $allowed_routes = array('/zibpay/', '/xuwbk/', '/zibll/');
+    $current_uri = $_SERVER['REQUEST_URI'];
+    foreach ($allowed_routes as $route) {
+        if (strpos($current_uri, $route) !== false) {
+            return $result;
+        }
+    }
+    // 允许公开端点的 GET 请求
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        return $result;
+    }
+    return new WP_Error(
+        'rest_forbidden',
+        __('REST API 仅限登录用户。', 'xuwbk'),
+        array('status' => 401)
+    );
+}
+
+// ===== 登录安全 =====
+/**
+ * 隐藏登录错误详情（防止用户名枚举）
+ */
+add_filter('login_errors', function() {
+    return '<strong>错误：</strong>用户名或密码不正确，请重试。';
+});
+
+/**
+ * 移除 WordPress 版本号
+ */
+remove_action('wp_head', 'wp_generator');
+add_filter('the_generator', '__return_empty_string');
+
+// ===== CDN 静态资源重写（生产环境启用） =====
+if (defined('CDN_URL') && CDN_URL) {
+    add_filter('script_loader_src', 'xuwbk_cdn_rewrite');
+    add_filter('style_loader_src', 'xuwbk_cdn_rewrite');
+    add_filter('theme_file_uri', 'xuwbk_cdn_rewrite');
+    function xuwbk_cdn_rewrite($url) {
+        if (is_admin() || is_login()) return $url;
+        return str_replace(home_url(), CDN_URL, $url);
+    }
+}
+
+/**
+ * 优化：上传图片自动转 WebP（如果服务器支持）
+ * 仅在需要时启用，避免冲突
+ */
+// add_filter('wp_handle_upload', 'xuwbk_convert_to_webp');
+// function xuwbk_convert_to_webp($upload) { ... }
+
+/**
+ * 安全检查：在 admin_footer 显示已激活插件数量提示（仅管理员可见）
+ */
+if (is_admin() && current_user_can('manage_options')) {
+    add_action('admin_notices', 'xuwbk_plugin_count_notice');
+    function xuwbk_plugin_count_notice() {
+        $active_count = count(get_option('active_plugins', array()));
+        if ($active_count > 30) {
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo sprintf(
+                '【XuWbk 优化提示】当前激活 %d 个插件，建议精简至 25 个以内以提升性能。',
+                $active_count
+            );
+            echo '</p></div>';
+        }
     }
 }

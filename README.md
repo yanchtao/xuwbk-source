@@ -1,10 +1,10 @@
-# XUWBK  Zibll Child Theme Framework
+# Zibll Child Theme Framework
 
 ![Zibll Child Theme Screenshot](https://count.getloli.com/@zibll_child?name=zibll_child&theme=random&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
 ## 项目简介
 
-这是一个专为Zibll主题设计的现代化子主题，提供标准化的开发结构和高效的功能扩展方案。本框架采用模块化设计，完美适配Zibll主题8.x版本，帮助开发者快速构建功能丰富的子主题。
+这是一个专为Zibll主题设计的现代化子主题开发框架，提供标准化的开发结构和高效的功能扩展方案。本框架采用模块化设计，完美适配Zibll主题8.x版本，帮助开发者快速构建功能丰富的子主题。
 
 ## ✨ 核心优势
 
@@ -30,7 +30,7 @@ zib_require(array(
 ## 目录结构
 
 ```
-XWUBK/
+zibll_child/
 ├── core/                  # 核心代码目录
 │   ├── functions/         # 功能函数目录
 │   │   └── functions.php  # 功能函数主文件
@@ -102,12 +102,12 @@ CSF::createSection($prefix, [
 将需要修改的父主题模板文件复制到子主题对应目录，例如：
 ```
 父主题: /zibll/header.php 
-子主题: /xuwbk/header.php
+子主题: /zibll-child/header.php
 ```
 
 ## 开源协议
 
-GPLv3 © 2025 [轩玮博客]
+GPLv3 © 2025 [李初一]
 
 ---
 
