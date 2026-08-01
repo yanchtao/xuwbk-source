@@ -30,7 +30,7 @@ zib_require(array(
 ## 目录结构
 
 ```
-xiuwbk/
+zibll_child/
 ├── core/                  # 核心代码目录
 │   ├── functions/         # 功能函数目录
 │   │   └── functions.php  # 功能函数主文件
@@ -102,12 +102,12 @@ CSF::createSection($prefix, [
 将需要修改的父主题模板文件复制到子主题对应目录，例如：
 ```
 父主题: /zibll/header.php 
-子主题: /xuwbk/header.php
+子主题: /zibll-child/header.php
 ```
 
 ## 开源协议
 
-GPLv3 © 2025 [轩玮博客]
+GPLv3 © 2025 [李初一]
 
 ---
 
